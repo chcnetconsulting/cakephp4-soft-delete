@@ -1,26 +1,42 @@
-# CakeSoftDelete plugin for CakePHP 4.x
+# CakeSoftDelete plugin for CakePHP 5.x
 
 ## Fork
 
-This repo is forked from not maintained [pgbi/cakephp3-soft-delete](https://github.com/PGBI/cakephp3-soft-delete) and updated to avoid deprecated code in CakePHP >=4.0
+This repo is a fork of the archived [salines/cakephp4-soft-delete](https://github.com/salines/cakephp4-soft-delete)
+(itself a fork of [pgbi/cakephp3-soft-delete](https://github.com/PGBI/cakephp3-soft-delete)), ported to CakePHP 5.
+The package name `salines/cakephp4-soft-delete` is kept on purpose so that existing applications only need to add a
+`repositories` entry; the trait, its namespace and the public methods are unchanged.
+
+What changed for CakePHP 5 (v2.0.0):
+
+- `Table::query()` is gone in CakePHP 5; the plugin now overrides `selectQuery()` and ships
+  `SoftDelete\ORM\SelectQuery` (replacing `SoftDelete\ORM\Query`). `find()` and `get()` are built on it.
+- Options arrays passed to `find()` are no longer forwarded by CakePHP 5. Use the named argument or the finder:
+  `find('all', withDeleted: true)`, `find('withDeleted')` or `->applyOptions(['withDeleted' => true])`.
+- Typed signatures matching `Cake\ORM\Table` (`_processDelete`, `deleteAll`, `hardDelete`, `hardDeleteAll`, `restore`).
+- `MissingColumnException` extends `Cake\Core\Exception\CakeException`.
+- Tests (SQLite in memory): `composer install && vendor/bin/phpunit`. Green on PHP 8.3 and 8.5 with CakePHP 5.4.
 
 ## Purpose
 
-This Cakephp plugin enables you to make your models soft deletable.
+This CakePHP plugin enables you to make your models soft deletable.
 When soft deleting an entity, it is not actually removed from your database. Instead, a `deleted` timestamp is set on the record.
 
 ## Requirements
 
-This plugins has been developed for cakephp >=4.0 and PHP >=7.2
+CakePHP ^5.0 and PHP >= 8.1. For CakePHP 4 use the original package, version `~1.0`.
 
 ## Installation
 
-You can install this plugin into your CakePHP application using [composer](http://getcomposer.org).
+Add the fork as a VCS repository and require the (unchanged) package name:
 
-Update your composer file to include this plugin:
-
-```
-composer require salines/cakephp4-soft-delete "~1.0"
+```json
+"repositories": [
+    { "type": "vcs", "url": "https://github.com/chcnetconsulting/cakephp4-soft-delete" }
+],
+"require": {
+    "salines/cakephp4-soft-delete": "^2.0"
+}
 ```
 
 ## Configuration
@@ -29,9 +45,8 @@ composer require salines/cakephp4-soft-delete "~1.0"
 
 Use the SoftDelete trait on your model Table class:
 
-```
+```php
 // in src/Model/Table/UsersTable.php
-...
 use SoftDelete\Model\Table\SoftDeleteTrait;
 
 class UsersTable extends Table
@@ -44,15 +59,11 @@ Your soft deletable model database table should have a field called `deleted` of
 If you want to customise this field you can declare the field in your Table class.
 
 ```php
-// in src/Model/Table/UsersTable.php
-...
-use SoftDelete\Model\Table\SoftDeleteTrait;
-
 class UsersTable extends Table
 {
     use SoftDeleteTrait;
 
-    protected $softDeleteField = 'deleted_date';
+    protected string $softDeleteField = 'deleted_date';
     ...
 ```
 
@@ -63,52 +74,40 @@ class UsersTable extends Table
 `delete` and `deleteAll` functions will now soft delete records by populating `deleted` field with the date of the deletion.
 
 ```php
-// in src/Model/Table/UsersTable.php
 $this->delete($user); // $user entity is now soft deleted if UsersTable uses SoftDeleteTrait.
 ```
 
-### Restoring Soft deleted records
-
-To restore a soft deleted entity into an active state, use the `restore` method:
+### Restoring soft deleted records
 
 ```php
-// in src/Model/Table/UsersTable.php
 // Let's suppose $user #1 is soft deleted.
-$user = $this->Users->find('all', ['withDeleted'])->where('id', 1)->first();
-$this->restore($user); // $user #1 is now restored.
+$user = $this->Users->find('all', withDeleted: true)->where(['id' => 1])->first();
+$this->Users->restore($user); // $user #1 is now restored.
 ```
 
 ### Finding records
 
 `find`, `get` or dynamic finders (such as `findById`) will only return non soft deleted records.
-To also return soft deleted records, `$options` must contain `'withDeleted'`. Example:
+To also return soft deleted records:
 
 ```php
-// in src/Model/Table/UsersTable.php
 $nonSoftDeletedRecords = $this->find('all');
-$allRecords            = $this->find('all', ['withDeleted']);
+$allRecords            = $this->find('all', withDeleted: true);
+$allRecords            = $this->find('withDeleted');
 ```
 
 ### Hard deleting records
 
-To hard delete a single entity:
 ```php
-// in src/Model/Table/UsersTable.php
 $user = $this->get($userId);
 $success = $this->hardDelete($user);
-```
 
-To mass hard delete records that were soft deleted before a given date, you can use hardDeleteAll($date):
-
-```
-// in src/Model/Table/UsersTable.php
-$date = new \DateTime('some date');
-$affectedRowsCount = $this->hardDeleteAll($date);
+// mass hard delete of records soft deleted before a given date
+$affectedRowsCount = $this->hardDeleteAll(new \DateTime('some date'));
 ```
 
 ## Soft deleting & associations
 
-Associations are correctly handled by SoftDelete plugin.
-
-1. Soft deletion will be cascaded to related models as usual. If related models also use SoftDelete Trait, they will be soft deleted.
-2. Soft deletes records will be excluded from counter caches.
+1. Soft deletion is cascaded to related models as usual (`dependent` + `cascadeCallbacks`). If related models also use
+   the SoftDelete trait, they are soft deleted.
+2. Soft deleted records are excluded from `contain()` results and counter caches.
